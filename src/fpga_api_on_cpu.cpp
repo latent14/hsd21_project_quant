@@ -107,15 +107,15 @@ const float* FPGA::blockMM(Compute* comp)
     char act_bits_min = 0;
     char act_bits_max = (1<<(comp->act_bits-1))-1;
 
-    float act_scale = 0; // TODO calculate the scale factor
-    char act_offset = 0; // TODO calculate the zero-offset
+    float act_scale = (comp->act_max - comp->act_min) / (act_bits_max - act_bits_min); // TODO calculate the scale factor
+    char act_offset = act_bits_min - ceil(comp->act_min / act_scale); // TODO calculate the zero-offset
     // quantize(); // TODO complete quantize function
 
     char weight_bits_min = 0;
     char weight_bits_max = (1<<(comp->weight_bits-1))-1;
 
-    float weight_scale = 0; // TODO calculate the scale factor
-    char weight_offset = 0; // TODO calculate the zero-offset
+    float weight_scale = (comp->weight_max - comp->weight_min) / (weight_bits_max - weight_bits_min); // TODO calculate the scale factor
+    char weight_offset = weight_bits_min - ceil(comp->weight_min / weight_scale); // TODO calculate the zero-offset
     // quantize(); // TODO complete quantize function
 
     for(int i = 0; i < v_size_; ++i)
@@ -162,15 +162,15 @@ const float *FPGA::blockMV(Compute* comp)
     char act_bits_min = 0;
     char act_bits_max = (1<<(comp->act_bits-1))-1;
 
-    float act_scale = 0; // TODO calculate the scale factor
-    char act_offset = 0; // TODO calculate the zero-offset
+    float act_scale = (comp->act_max - comp->act_min) / (act_bits_max - act_bits_min); // TODO calculate the scale factor
+    char act_offset = act_bits_min - ceil(comp -> act_min / act_scale); // TODO calculate the zero-offset
     // quantize(); // TODO complete quantize function
 
     char weight_bits_min = 0;
     char weight_bits_max = (1<<(comp->weight_bits-1))-1;
 
-    float weight_scale = 0; // TODO calculate the scale factor
-    char weight_offset = 0; // TODO calculate the zero-offset
+    float weight_scale = (comp->weight_max - comp->weight_min) / (weight_bits_max - weight_bits_min); // TODO calculate the scale factor
+    char weight_offset = weight_bits_min - ceil(comp->weight_min / weight_scale); // TODO calculate the zero-offset
     // quantize(); // TODO complete quantize function
 
     for (int i = 0; i < m_size_; ++i)
@@ -218,11 +218,21 @@ void FPGA::largeMM(const float* weight_mat, const float* input_mat, float* outpu
         int block_col_1 = min(v_size_, num_input-j);
         int block_col_2 = min(v_size_, num_matrix2-k);
 
-        // 1) Assign a m1
-        // IMPLEMENT THIS
+        for(int r1=0; r1<v_size_; r1++){
+	  for(int c1=0; c1<v_size_; c1++){
+	    if(r1<block_row && c1<block_col_1) m1[r1*v_size_ + c1] = weight_mat[(r1+i) * num_input+(c1 +j)];
+	    else m1[r1*v_size_+c1] = 0;
+	  }
+	}
 
         // 2) Assign a m2
         // IMPLEMENT THIS
+	for(int r1=0; r1<v_size_; r1++){
+	  for(int c1=0; c1<v_size_; c1++){
+	    if(r1 < block_col_1 && c1<block_col_2) m2[r1*v_size_+c1] = input_mat[(r1+j) * num_matrix2 + (c1+k)];
+	    else m2[r1*v_size_+c1] = 0;
+	  }
+	}
 
         // 3) Call a function `blockMM() to execute Matrix matrix multiplication
         const float* ret = this->blockMM(comp);
@@ -257,11 +267,18 @@ void FPGA::largeMV(const float *large_mat, const float *input, float *output, in
       int block_row = min(m_size_, num_output - i);
       int block_col = min(v_size_, num_input - j);
 
-      // 1) Assign a vector
-      // IMPLEMENT THIS
+      for(int k=0; k<v_size_; k++){
+	if(k<block_col) vec[k] = input[j+k];
+	else vec[k] = 0;
+      }
 
       // 2) Assign a matrix
-      // IMPLEMENT THIS
+      for(int r1=0; r1<m_size_; r1++){
+	for(int c1=0; c1<v_size_; c1++){
+	  if(r1<block_row && c1<block_col) mat[r1*v_size_+c1] = large_mat[(r1+i) * num_input + (c1+j)];
+	  else mat[r1*v_size_+c1] = 0;
+	}
+      }
 
       // 3) Call a function `blockMV() to execute MV multiplication
       const float* ret = this->blockMV(comp);
@@ -296,8 +313,16 @@ void FPGA::convLowering(const std::vector<std::vector<std::vector<std::vector<fl
   int input_height = inputs[0].size();
   int input_width = inputs[0][0].size();
 
-  // IMPLEMENT THIS
-  // For example,
-  // new_weights[0][0] = cnn_weights[0][0][0][0];
-  // new_inputs[0][0] = inputs[0][0][0];
+  for(int i = 0; i < input_channel; i++){
+      for(int j = 0; j < conv_height; j++){
+            for(int k = 0; k < conv_width; k++){
+		for(int l = 0; l < conv_channel; l++){
+		  new_weights[l][i*conv_height*conv_width + j*conv_width + k] = cnn_weights[l][i][j][k];}
+
+		for(int n = 0; n < input_height-conv_height+1; n++){
+		  for(int m = 0; m < input_width-conv_width+1; m++){
+			 new_inputs[i*conv_height*conv_width + j*conv_width + k][n * (input_width-conv_width+1) + m] = inputs[i][n+j][m+k];}}
+								  	}
+						      }
+			        }
 }
