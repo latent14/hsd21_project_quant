@@ -81,7 +81,10 @@ void quantize(const float* input, int* quantized, int num_input, int bits_min, i
 {
   for(int i = 0; i < num_input; i++)
   {
-    quantized[i] = 0; // TODO: convert floating point to quantized value
+    float q = ceil(input[i]/scale) + offset;
+    if(q > bits_max) quantized[i] = bits_max - offset;
+    else if(q < bits_min) quantized[i] = bits_min - offset;
+    else quantized[i] = q - offset;
   }
 }
 
@@ -89,7 +92,7 @@ void dequantize(int* quantized, float* output, int num_output, int offset, float
 {
   for(int i = 0; i < num_output; i++)
   {
-    output[i] = 0; // TODO: convert quantized value to floating point
+    output[i] = (float)(quantized[i] * scale);
   }
 }
 
