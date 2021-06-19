@@ -47,6 +47,7 @@ FPGA::~FPGA()
   delete[] qout_;
 }
 
+
 float *FPGA::matrix(void)
 {
   return data_ + v_size_;
@@ -81,8 +82,8 @@ void quantize(const float* input, int* quantized, int num_input, int bits_min, i
 {
   for(int i = 0; i < num_input; i++)
   {
-    float q = ceil(input[i]/scale) + offset;
-    if(q > bits_max) quantized[i] = bits_max - offset;
+    int q = (input[i]/scale)+offset;
+    if(q > bits_max) quantized[i] = bits_max - offset ;
     else if(q < bits_min) quantized[i] = bits_min - offset;
     else quantized[i] = q - offset;
   }
@@ -92,8 +93,7 @@ void dequantize(int* quantized, float* output, int num_output, int offset, float
 {
   for(int i = 0; i < num_output; i++)
   {
-    output[i] = (float)(quantized[i] * scale);
-  }
+    output[i] = scale*quantized[i];
 }
 
 const float* FPGA::blockMM(Compute* comp)
@@ -107,30 +107,33 @@ const float* FPGA::blockMM(Compute* comp)
 
   if(comp->quantized)
   {
+    int act[m1_size_];
+    int weight[m2_size_]; 
+
     char act_bits_min = 0;
     char act_bits_max = (1<<(comp->act_bits-1))-1;
 
     float act_scale = (comp->act_max - comp->act_min) / (act_bits_max - act_bits_min); // TODO calculate the scale factor
-    char act_offset = act_bits_min - ceil(comp->act_min / act_scale); // TODO calculate the zero-offset
-    // quantize(); // TODO complete quantize function
+    char act_offset = - ceil(comp->act_min / act_scale); // TODO calculate the zero-offset
+    quantize(m2, qm2, m2_size_, act_bits_min, act_bits_max, act_offset, act_scale); // TODO complete quantize function
 
     char weight_bits_min = 0;
     char weight_bits_max = (1<<(comp->weight_bits-1))-1;
 
     float weight_scale = (comp->weight_max - comp->weight_min) / (weight_bits_max - weight_bits_min); // TODO calculate the scale factor
-    char weight_offset = weight_bits_min - ceil(comp->weight_min / weight_scale); // TODO calculate the zero-offset
-    // quantize(); // TODO complete quantize function
+    char weight_offset = - ceil(comp->weight_min / weight_scale); // TODO calculate the zero-offset
+    quantize(m1, qm1, m1_size_, weight_bits_min, weight_bits_max, weight_offset, weight_scale); // TODO complete quantize function
 
     for(int i = 0; i < v_size_; ++i)
     {
       for(int j = 0; j < v_size_; ++j){    
         qout_M[v_size_*i+j] = 0;
         for(int k = 0; k < v_size_; ++k){
-          qout_M[v_size_*i+j] += m1[v_size_*i+k] * m2[v_size_*k + j];
+          qout_M[v_size_*i+j] += qm1[v_size_*i+k] * qm2[v_size_*k + j];
         }
       }
     }
-    // dequantize(); // TODO complete dequantize function
+    dequantize(qout_M, out, m1_size_ , 0, act_scale*weight_scale);
 
   }
   else{
@@ -166,15 +169,15 @@ const float *FPGA::blockMV(Compute* comp)
     char act_bits_max = (1<<(comp->act_bits-1))-1;
 
     float act_scale = (comp->act_max - comp->act_min) / (act_bits_max - act_bits_min); // TODO calculate the scale factor
-    char act_offset = act_bits_min - ceil(comp -> act_min / act_scale); // TODO calculate the zero-offset
-    // quantize(); // TODO complete quantize function
+    char act_offset = - ceil(comp -> act_min / act_scale); // TODO calculate the zero-offset
+    quantize(vec, qvec_, v_size_, act_bits_min, act_bits_max, act_offset, act_scale);
 
     char weight_bits_min = 0;
     char weight_bits_max = (1<<(comp->weight_bits-1))-1;
 
     float weight_scale = (comp->weight_max - comp->weight_min) / (weight_bits_max - weight_bits_min); // TODO calculate the scale factor
-    char weight_offset = weight_bits_min - ceil(comp->weight_min / weight_scale); // TODO calculate the zero-offset
-    // quantize(); // TODO complete quantize function
+    char weight_offset = - ceil(comp->weight_min / weight_scale); // TODO calculate the zero-offset
+    quantize(mat, qmat_, m_size_*v_size_, weight_bits_min, weight_bits_max, weight_offset, weight_scale);
 
     for (int i = 0; i < m_size_; ++i)
     {
@@ -183,7 +186,7 @@ const float *FPGA::blockMV(Compute* comp)
         qout_[i] += (qvec_[j]-act_offset) * (qmat_[v_size_ * i + j]-weight_offset);
     }
 
-    // dequantize(); // TODO complete dequantize function
+    dequantize(qout_, out, m_size_, 0, act_scale*weight_scale);
   }
   else
   {
